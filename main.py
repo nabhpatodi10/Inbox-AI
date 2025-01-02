@@ -25,7 +25,12 @@ user = "Nabh Patodi"
 
 information = "I am a third year student pursuing B.Tech Computer Science and Engineering from S.R.M Institute of Science and Technology"
 
-email_classes = "'positive feedback', 'negative feedback', 'general email', 'marketing or social spam', 'escalate to human'"
+email_classes = """'positive feedback' - Any kind of a positive feedback regarding a product or a service\n
+                'negative feedback' - Any kind of a negative feedback regarding a product or a service\n
+                'general email' - Any email from family or friend or a general informative email from someone\n
+                'marketing or social email' - Any email from any social media platform or any other source which has the only aim of marketing or 
+                selling something\n
+                'escalate to human' - Any email which tells about an emergency or any situation which needs the attention of the owner"""
 
 email1 = """Hi Nabh,
         I hope you're doing well. Just wanted to check in on you. I heard about your co-op offer, huge congratulations to you for that.
@@ -67,17 +72,19 @@ def reply_writing(email_class):
     print("Email Class: ", email_class)
     if email_class == "No Reply Required":
         return email_class
+    elif "escalate to human" in email_class.email_class.lower():
+        return "Escalate to Human"
     else:
         return reply_writing_chain.invoke({"email_class" : email_class.email_class, "user" : user, "information" : information, "email" : email})
     
 def hallucination_check(reply):
-    if reply == "No Reply Required":
+    if isinstance(reply, str):
         return reply
     else:
         return {"decision" : hallucination_check_chain.invoke({"email" : email, "reply" : reply.reply}), "reply" : reply}
     
 def content_check(decision):
-    if decision == "No Reply Required":
+    if isinstance(decision, str):
         return decision
     elif decision["decision"].decision == True:
         return content_chain_call()
@@ -85,16 +92,16 @@ def content_check(decision):
         return {"decision" : content_check_chain.invoke({"user" : user, "information" : information, "email" : email, "reply" : decision["reply"].reply}), "reply" : decision["reply"]}
     
 def chain_end(decision):
-    if decision == "No Reply Required":
+    if isinstance(decision, str):
         return decision
     elif decision["decision"].decision == False:
-        return final_chain_call()
+        return final_output()
     else:
         return decision["reply"].reply
     
 final_chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check) | RunnableLambda(chain_end)
 
-def final_chain_call():
+def final_output():
     return final_chain.invoke({"user" : user, "information" : information, "email" : email})
 
 def content_chain_call():
@@ -102,4 +109,4 @@ def content_chain_call():
     return chain.invoke({"user" : user, "information" : information, "email" : email})
 
 print()
-print(final_chain_call())
+print(final_output())
