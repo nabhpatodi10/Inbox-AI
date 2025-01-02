@@ -1,228 +1,38 @@
 from dotenv import load_dotenv
 load_dotenv()
 from langchain_groq import ChatGroq
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema.output_parser import StrOutputParser
 from langchain.schema.runnable import RunnableLambda
+
+import nodes
+import structures
+
+node = nodes.nodes()
+structure = structures.structures()
 
 model = ChatGroq(model = "llama-3.3-70b-versatile")
 
-classification_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an email classification expert who's only job is to classify the given email into the following categories: 
-         'positive feedback', 'negative feedback', 'general email', 'marketing or social spam', 'escalate to human'.
-         
-         The positive feedback category of emails should contain any kind of positive feedback regarding a product or a service.
-         The negative feedback category of emails should contain any kind of negative feedback regarding a product or a service.
-         The general email category of emails should contain any informative emails or emails from friends or family.
-         The marketing or social spam category of emails should contain emails which are from a social media or any other platform and the content is not
-         informative and the only aim of that email is marketing of any kind.
-         The escalate to human category of emails should contain any email which must be brought to the attention of the human owner or if there is any
-         kind of emergency anywhere or anything of importance which requires the owner's intervention.
-         You only need to give the classification of the email as output and nothing else."""),
-        ("human", """Classify the following email:
-         
-         {email}.""")
-    ]
-)
+reply_decision_chain = node.reply_decision_node | model.with_structured_output(structure.decision_output)
 
-positive_feedback_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in writing replies to positive feedback emails regarding any product or service mentioned. You always keep in mind
-         to thank the customer and write replies which are as customised as possible to the customer based on the information which can be extracted of the
-         customer and the product or the service from the feedback emails. Also, remember to not take any kind of decisions on your own or offer or commit 
-         anything to someone."""),
-        ("human", """Write the reply for the following feedback email:
-         
-         {email}""")
-    ]
-)
+classification_chain = node.classification_node | model.with_structured_output(structure.classification_output)
 
-negative_feedback_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in writing replies to negative feedback emails regarding any product or service mentioned. You always keep in mind
-         to apologise to the customer and ensure that the issue will be looked into at the earliest and write replies which are as customised as possible 
-         to the customer based on the information which can be extracted of the customer, the product or service and the issue from the feedback emails. 
-         Also, remember to not take any kind of decisions on your own or offer or commit anything to someone."""),
-        ("human", """Write the reply for the following feedback email:
-         
-         {email}""")
-    ]
-)
+reply_writing_chain = node.reply_writing_node | model.with_structured_output(structure.reply_output)
 
-general_email_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in writing replies to general emails which include emails from friends or family or any other informative emails. 
-         You always keep in mind to write emails which are as customised as possible based on the information extracted from the email. Also, remember to 
-         not take any kind of decisions on your own or offer or commit anything to someone."""),
-        ("human", """Write the reply for the following feedback email:
-         
-         {email}""")
-    ]
-)
+hallucination_check_chain = node.hallucination_check_node | model.with_structured_output(structure.decision_output)
 
-marketing_social_email_decision_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in analysing marketing and social emails and deciding if a reply should be given to the email or not. Your job is 
-         to analyse the given email and give only a 'yes' or 'no' as a response. 'yes' means that a reply should be given and 'no' means that a reply is 
-         not required."""),
-        ("human", """Analyse the following email:
-         
-         {email}""")
-    ]
-)
+content_check_chain = node.content_check_node | model.with_structured_output(structure.decision_output)
 
-marketing_social_email_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in writing replies to marketing and social emails. You always keep in mind to write replies which are as customised 
-         as possible based on the information which can be extracted from the email. Also, remember to not buy or place an order for anything even if the 
-         email asks you to and do not take any decisions on your own."""),
-        ("human", """Write the reply for the following feedback email:
-         
-         {email}""")
-    ]
-)
+user = "Nabh Patodi"
 
-escalate_to_human_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in writing replies to emails which need to be escalated to the human owner or human agent. You always keep in 
-         mind to write replies which are as customised as possible based on the information which can be extracted from the email. Also, remember to not 
-         take any kind of decisions on your own or offer or commit anything to someone."""),
-        ("human", """Write the reply for the following feedback email:
-         
-         {email}""")
-    ]
-)
+information = "I am a third year student pursuing B.Tech Computer Science and Engineering from S.R.M Institute of Science and Technology"
 
-halluciantion_check_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in detecting hallucinations in replies generated for emails. Your job is to analyse the given email and the 
-         generated reply and detect if the reply shows any signs of computer or LLM hallucinations. Also check correct grammar and senetence structure, 
-         coherence between sentences, duplicate sentences. You only have to give a 'yes' or a 'no' as response and nothing else. 'yes' means that there 
-         is hallucination detected and 'no' means that there is no hallucination detected."""),
-        ("human", """Analyse the given email and the generated reply:
-          
-         Email: {email}
+email_classes = "'positive feedback', 'negative feedback', 'general email', 'marketing or social spam', 'escalate to human'"
 
-         Reply: {reply}""")
-    ]
-)
-
-content_check_node = ChatPromptTemplate.from_messages(
-    [
-        ("system", """You are an expert in analysing emails and the replies generated for those emails. Your job is to analyse the given email and the 
-         generated reply and check if the reply is appropriate and good enough for the given email and whether or not it addresses all the points 
-         mentioned in the email. You only have to give a 'yes' or a 'no' as response and nothing else. 'yes' means that the reply is good enough and that 
-         it can be considered as the final reply and 'no' means that the reply is not good enough and it should be rewritten."""),
-        ("human", """Analyse the given email and the generated reply:
-          
-         Email: {email}
-
-         Reply: {reply}""")
-    ]
-)
-
-reply = ""
-
-def check_reply(result):
-    return result
-
-marketing_social_chain = marketing_social_email_node | model | StrOutputParser()
-
-def marketing_social_branch(result):
-    global email
-    global reply
-    if "yes" in result.lower():
-        reply = marketing_social_chain.invoke({"email" : email})
-        return reply
-    else:
-        return reply
-
-positive_feedback_chain = positive_feedback_node | model | StrOutputParser()
-
-negative_feedback_chain = negative_feedback_node | model | StrOutputParser()
-
-general_email_chain = general_email_node | model | StrOutputParser()
-
-marketing_social_email_decision_chain = marketing_social_email_decision_node | model | StrOutputParser() | RunnableLambda(marketing_social_branch)
-
-escalate_to_human_chain = escalate_to_human_node | model | StrOutputParser()
-
-def classification_branch(result):
-    global email
-    global reply
-    if "positive feedback" in result.lower():
-        print("Positive Feedback\n")
-        reply = positive_feedback_chain.invoke({"email" : email})
-        return reply
-
-    elif "negative feedback" in result.lower():
-        print("Negative Feedback\n")
-        reply = negative_feedback_chain.invoke({"email" : email})
-        return reply
-    
-    elif "general email" in result.lower():
-        print("General Email\n")
-        reply = general_email_chain.invoke({"email" : email})
-        return reply
-
-    elif "marketing or social spam" in result.lower():
-        print("Marketing or Social Spam\n")
-        reply = marketing_social_email_decision_chain.invoke({"email" : email})
-        return reply
-    
-    else:
-        print("Escalate to Human\n")
-        reply = escalate_to_human_chain.invoke({"email" : email})
-        return reply
-
-classification_chain = classification_node | model | StrOutputParser()
-
-reply_generation_chain = classification_chain | RunnableLambda(classification_branch)
-
-def content_check_branch(result):
-    print("Inside Content Check Function")
-    global email
-    global reply
-    if "yes" in result.lower():
-        print("Content is perfect!")
-        return reply
-    else:
-        print("Content Not Perfect...")
-        reply = complete_chain()
-        return reply
-
-content_check_chain = content_check_node | model | StrOutputParser() | RunnableLambda(content_check_branch) | StrOutputParser()
-
-def hallucination_check_branch(result):
-    print("Inside Hallucination Function")
-    global email
-    global reply
-    if reply != None and reply != "None":
-        if "no" in result.lower():
-            print("No Hallucination")
-            reply = content_check_chain.invoke({"email" : email, "reply" : reply})
-            return reply
-        else:
-            print("Hallucination Detected")
-            reply = complete_chain()
-            return reply
-
-reply_checking_chain = halluciantion_check_node | model | StrOutputParser() | RunnableLambda(hallucination_check_branch) | StrOutputParser()
-
-def complete_chain():
-    global email
-    global reply
-    reply = reply_generation_chain.invoke({"email" : email})
-    reply = reply_checking_chain.invoke({"email" : email, "reply" : reply})
-    return reply
-
-email1 = """Hi Ananya,
+email1 = """Hi Nabh,
         I hope you're doing well. Just wanted to check in on you. I heard about your co-op offer, huge congratulations to you for that.
         Hope everyone in the family is fine. Let me know if you need any help.
         
         Best wishes
-        Nabh"""
+        Ananya"""
 
 email2 = """Hello sir,
         We are from ElectroSteel Pvt Ltd, the following are this month's rates for wire rod:
@@ -235,14 +45,61 @@ email2 = """Hello sir,
 email3 = """Hello user,
         This is Team Instagram, Please find the summary of your earnings for this month. If you have any doubts, reach out to us at insta@insta.com"""
 
-email4 = """Hello sir
-        We recently got to know about your company and we would want to work with you, below is the list of services we provide:
-        Tax Return Filing
-        Bank Statement Analysis
+email = """Hello sir
+        We recently got to know that you are a student and we would want to work with you, below is the list of services we provide:
+        AI-ML Training
+        Cloud and DevOps Training
+        Internship Programmes
         
         Please let us know if you would want any services from us."""
 
-email = """Nabh, it's an emergency. Your grandfather has been admitted to the hospital and he's critical, the doctors are saying that he has very less 
+email5 = """Nabh, it's an emergency. Your grandfather has been admitted to the hospital and he's critical, the doctors are saying that he has very less 
         time left. I think you should come here and be with him."""
 
-print(reply_checking_chain.invoke({"email" : email, "reply" : reply_generation_chain.invoke({"email" : email})}))
+def email_classification(decision):
+    print("Reply Decision: ", decision)
+    if decision.decision == True:
+        return classification_chain.invoke({"user" : user, "information" : information, "email_classes" : email_classes, "email" : email})
+    else:
+        return "No Reply Required"
+    
+def reply_writing(email_class):
+    print("Email Class: ", email_class)
+    if email_class == "No Reply Required":
+        return email_class
+    else:
+        return reply_writing_chain.invoke({"email_class" : email_class.email_class, "user" : user, "information" : information, "email" : email})
+    
+def hallucination_check(reply):
+    if reply == "No Reply Required":
+        return reply
+    else:
+        return {"decision" : hallucination_check_chain.invoke({"email" : email, "reply" : reply.reply}), "reply" : reply}
+    
+def content_check(decision):
+    if decision == "No Reply Required":
+        return decision
+    elif decision["decision"].decision == True:
+        return content_chain_call()
+    else:
+        return {"decision" : content_check_chain.invoke({"user" : user, "information" : information, "email" : email, "reply" : decision["reply"].reply}), "reply" : decision["reply"]}
+    
+def chain_end(decision):
+    if decision == "No Reply Required":
+        return decision
+    elif decision["decision"].decision == False:
+        return final_chain_call()
+    else:
+        return decision["reply"].reply
+    
+final_chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check) | RunnableLambda(chain_end)
+
+def final_chain_call():
+    return final_chain.invoke({"user" : user, "information" : information, "email" : email})
+
+def content_chain_call():
+    chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check)
+    return chain.invoke({"user" : user, "information" : information, "email" : email})
+
+print()
+print(final_chain_call())
