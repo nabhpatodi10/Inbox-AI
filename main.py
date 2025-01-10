@@ -3,11 +3,13 @@ load_dotenv()
 from langchain_groq import ChatGroq
 from langchain.schema.runnable import RunnableLambda
 
-import nodes
-import structures
+from nodes import nodes
+from structures import structures
+from read_emails import read_emails
 
-node = nodes.nodes()
-structure = structures.structures()
+node = nodes()
+structure = structures()
+emails = read_emails()
 
 model = ChatGroq(model = "llama-3.3-70b-versatile")
 
@@ -32,44 +34,17 @@ email_classes = """'positive feedback' - Any kind of a positive feedback regardi
                 selling something\n
                 'escalate to human' - Any email which tells about an emergency or any situation which needs the attention of the owner"""
 
-email1 = """Hi Nabh,
-        I hope you're doing well. Just wanted to check in on you. I heard about your co-op offer, huge congratulations to you for that.
-        Hope everyone in the family is fine. Let me know if you need any help.
-        
-        Best wishes
-        Ananya"""
-
-email2 = """Hello sir,
-        We are from ElectroSteel Pvt Ltd, the following are this month's rates for wire rod:
-        5 mm = ₹5500
-        6 mm = ₹6500
-        7 mm = ₹7500
-        
-        Let us know if you have any requirements."""
-
-email3 = """Hello user,
-        This is Team Instagram, Please find the summary of your earnings for this month. If you have any doubts, reach out to us at insta@insta.com"""
-
-email = """Hello sir
-        We recently got to know that you are a student and we would want to work with you, below is the list of services we provide:
-        AI-ML Training
-        Cloud and DevOps Training
-        Internship Programmes
-        
-        Please let us know if you would want any services from us."""
-
-email5 = """Nabh, it's an emergency. Your grandfather has been admitted to the hospital and he's critical, the doctors are saying that he has very less 
-        time left. I think you should come here and be with him."""
+mails = emails.read_mails()
+global email
+email = ""
 
 def email_classification(decision):
-    print("Reply Decision: ", decision)
     if decision.decision == True:
         return classification_chain.invoke({"user" : user, "information" : information, "email_classes" : email_classes, "email" : email})
     else:
         return "No Reply Required"
     
 def reply_writing(email_class):
-    print("Email Class: ", email_class)
     if email_class == "No Reply Required":
         return email_class
     elif "escalate to human" in email_class.email_class.lower():
@@ -102,11 +77,22 @@ def chain_end(decision):
 final_chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check) | RunnableLambda(chain_end)
 
 def final_output():
-    return final_chain.invoke({"user" : user, "information" : information, "email" : email})
+    replies = []
+    try:
+        for mail in mails:
+            email = "Sender: " + mail["Sender"] + "\nSubject: " + mail["Subject"] + "\nBody: " + mail["Body"]
+            print(email, end = "\n")
+            reply = final_chain.invoke({"user" : user, "information" : information, "email" : email})
+            replies.append({"ID": mail["ID"], "Reply" : reply})
+        return replies
+    except Exception as e:
+        print(e)
 
 def content_chain_call():
     chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check)
     return chain.invoke({"user" : user, "information" : information, "email" : email})
 
 print()
-print(final_output())
+all_replies = final_output()
+for i in all_replies:
+    print(i["Reply"], end = "\n")
