@@ -1,27 +1,12 @@
 from dotenv import load_dotenv
 load_dotenv()
-from langchain_groq import ChatGroq
 from langchain.schema.runnable import RunnableLambda
 
-from nodes import nodes
-from structures import structures
-from read_emails import read_emails
+from email_operations import mail_operations
+from chains import mail_chains, thread_chains
 
-node = nodes()
-structure = structures()
-emails = read_emails()
-
-model = ChatGroq(model = "llama-3.3-70b-versatile")
-
-reply_decision_chain = node.reply_decision_node | model.with_structured_output(structure.decision_output)
-
-classification_chain = node.classification_node | model.with_structured_output(structure.classification_output)
-
-reply_writing_chain = node.reply_writing_node | model.with_structured_output(structure.reply_output)
-
-hallucination_check_chain = node.hallucination_check_node | model.with_structured_output(structure.decision_output)
-
-content_check_chain = node.content_check_node | model.with_structured_output(structure.decision_output)
+emails = mail_operations()
+chain_type = mail_chains()
 
 user = "Nabh Patodi"
 
@@ -35,38 +20,44 @@ email_classes = """'positive feedback' - Any kind of a positive feedback regardi
                 'escalate to human' - Any email which tells about an emergency or any situation which needs the attention of the owner"""
 
 mails = emails.read_mails()
-global email
-email = ""
 
 def email_classification(decision):
     if decision.decision == True:
-        return classification_chain.invoke({"user" : user, "information" : information, "email_classes" : email_classes, "email" : email})
+        return chain_type.classification_chain.invoke({"user" : user, "information" : information, "email_classes" : email_classes, "email" : email})
     else:
         return "No Reply Required"
     
 def reply_writing(email_class):
+    print("In Writing Node", end = "\n")
     if email_class == "No Reply Required":
         return email_class
     elif "escalate to human" in email_class.email_class.lower():
         return "Escalate to Human"
     else:
-        return reply_writing_chain.invoke({"email_class" : email_class.email_class, "user" : user, "information" : information, "email" : email})
+        print("Writing Reply", end = "\n")
+        return chain_type.reply_writing_chain.invoke({"email_class" : email_class.email_class, "user" : user, "information" : information, "email" : email})
     
 def hallucination_check(reply):
+    print("In Hallucination Check Node", end = "\n")
     if isinstance(reply, str):
         return reply
     else:
-        return {"decision" : hallucination_check_chain.invoke({"email" : email, "reply" : reply.reply}), "reply" : reply}
+        print("Checking Hallucination", end = "\n")
+        return {"decision" : chain_type.hallucination_check_chain.invoke({"email" : email, "reply" : reply.reply}), "reply" : reply}
     
 def content_check(decision):
+    print("In Content Check Node", end = "\n")
     if isinstance(decision, str):
         return decision
     elif decision["decision"].decision == True:
+        print("Hallucination Found", end = "\n")
         return content_chain_call()
     else:
-        return {"decision" : content_check_chain.invoke({"user" : user, "information" : information, "email" : email, "reply" : decision["reply"].reply}), "reply" : decision["reply"]}
+        print("Checking checking content", end = "\n")
+        return {"decision" : chain_type.content_check_chain.invoke({"user" : user, "information" : information, "email" : email, "reply" : decision["reply"].reply}), "reply" : decision["reply"]}
     
 def chain_end(decision):
+    print("Ending Chain", end = "\n")
     if isinstance(decision, str):
         return decision
     elif decision["decision"].decision == False:
@@ -74,25 +65,42 @@ def chain_end(decision):
     else:
         return decision["reply"].reply
     
-final_chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check) | RunnableLambda(chain_end)
+final_chain = chain_type.reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check) | RunnableLambda(chain_end)
 
 def final_output():
+    global email
+    global chain_type
     replies = []
     try:
+        j = 1
         for mail in mails:
-            email = "Sender: " + mail["Sender"] + "\nSubject: " + mail["Subject"] + "\nBody: " + mail["Body"]
+            if mail["Type"] == "Single Mail":
+                chain_type = mail_chains()
+            elif mail["Type"] == "Thread":
+                chain_type = thread_chains()
+            print(f"Thread {j}: \n")
+            email = "Sender: " + mail["Sender"] + "\nSubject: " + mail["Subject"] + "\nEmail Body:"
+            for i in mail["Body"]:
+                email += i + "\n\n"
             print(email, end = "\n")
+            if "<" in mail["Sender"] and ">" in mail["Sender"]:
+                start = mail["Sender"].index("<")
+                sender_mail = mail["Sender"][start + 1 : -1]
             reply = final_chain.invoke({"user" : user, "information" : information, "email" : email})
-            replies.append({"ID": mail["ID"], "Reply" : reply})
+            replies.append({"ID": mail["ID"], "Sender" : sender_mail, "Subject" : mail["Subject"], "Reply" : reply})
+            j+=1
         return replies
     except Exception as e:
         print(e)
 
 def content_chain_call():
-    chain = reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check)
+    chain = chain_type.reply_decision_chain | RunnableLambda(email_classification) | RunnableLambda(reply_writing) | RunnableLambda(hallucination_check) | RunnableLambda(content_check)
     return chain.invoke({"user" : user, "information" : information, "email" : email})
 
 print()
 all_replies = final_output()
+print()
 for i in all_replies:
     print(i["Reply"], end = "\n")
+
+emails.send_mails(all_replies)
