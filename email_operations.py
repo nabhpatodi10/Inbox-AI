@@ -11,7 +11,7 @@ class mail_operations():
     __creds = None
     __service = None
 
-    def __get_sender(self, i, messages):
+    def __get_sender(self, i: int, messages) -> str:
         last_message = messages[i]['payload']
         headers = last_message['headers']
         for details in headers:
@@ -21,7 +21,7 @@ class mail_operations():
             self.__get_sender(i-1, messages)
         return sender
     
-    def __edit_content(self, text):
+    def __edit_content(self, text: str) -> str:
         new_text = ""
         test_list = text.split("\n")
         for i in test_list:
@@ -37,7 +37,7 @@ class mail_operations():
         self.__creds = auth.cred_token_auth()
         self.__service = build("gmail", "v1", credentials = self.__creds)
     
-    def read_mails(self):
+    def read_mails(self) -> list | None:
         threads = self.__service.users().threads().list(userId='me', labelIds = ["INBOX", "UNREAD"]).execute().get('threads', [])
         emails = []
         for thread in threads:
@@ -86,7 +86,7 @@ class mail_operations():
             emails.append({"ID" : thread['id'], "Type" : message_type, "Sender" : sender, "Subject" : subject, "Body" : body})
         return emails
     
-    def send_mails(self, replies):
+    def send_mails(self, replies: list):
         for reply in replies:
             if reply["Reply"].lower() != "no reply required":
                 thread = self.__service.users().threads().get(userId = 'me', id = reply["ID"]).execute()
