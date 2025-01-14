@@ -6,14 +6,14 @@ class database():
     __client = None
     __collection = None
 
-    def connect_to_database(self) -> bool:
+    def __init__(self):
         try:
             self.__client = MongoClient(os.getenv("MONGODB_URI"))
             self.__collection = self.__client["User-Information"]["Basic-Information"]
-            return True
+            print("Connection Successful")
         except Exception as error:
             print(error)
-            return False
+            return
     
     def insert(self, username: str, fullname: str, email: str, information: str, email_classes: str, send_mails: bool = True, mark_mails: bool = True) -> bool:
         try:

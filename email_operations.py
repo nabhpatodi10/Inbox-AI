@@ -11,13 +11,13 @@ class mail_operations():
     __creds = None
     __service = None
 
-    def __get_sender(self, i: int, messages) -> str:
+    def __get_sender(self, i: int, messages, email: str) -> str:
         last_message = messages[i]['payload']
         headers = last_message['headers']
         for details in headers:
             if details['name'] == 'From':
                 sender = details['value']
-        if sender == "project.dump.nabh@gmail.com" and len(messages) > i*-1:
+        if sender == email and len(messages) > i*-1:
             self.__get_sender(i-1, messages)
         return sender
     
@@ -37,7 +37,7 @@ class mail_operations():
         self.__creds = auth.cred_token_auth()
         self.__service = build("gmail", "v1", credentials = self.__creds)
     
-    def read_mails(self) -> list | None:
+    def read_mails(self, email: str) -> list | None:
         threads = self.__service.users().threads().list(userId='me', labelIds = ["INBOX", "UNREAD"]).execute().get('threads', [])
         emails = []
         for thread in threads:
@@ -50,8 +50,8 @@ class mail_operations():
                     subject = details['value']
                 elif details['name'] == 'From':
                     sender = details['value']
-                    if sender == "project.dump.nabh@gmail.com":
-                        sender = self.__get_sender(-2, messages)
+                    if sender == email:
+                        sender = self.__get_sender(-2, messages, email)
             body = []
             content = ""
             if len(messages) > 1:
@@ -61,7 +61,7 @@ class mail_operations():
                     message_headers = payload['headers']
                     for message_details in message_headers:
                         if message_details['name'] == 'From':
-                            if message_details['value'] == "project.dump.nabh@gmail.com":
+                            if message_details['value'] == email:
                                 content += "\nMessage from me:\n"
                             else:
                                 content += f"\nMessage from {message_details['value']}:\n"
@@ -86,29 +86,38 @@ class mail_operations():
             emails.append({"ID" : thread['id'], "Type" : message_type, "Sender" : sender, "Subject" : subject, "Body" : body})
         return emails
     
-    def send_mails(self, replies: list):
-        for reply in replies:
-            if reply["Reply"].lower() != "no reply required":
-                thread = self.__service.users().threads().get(userId = 'me', id = reply["ID"]).execute()
-                messages = thread['messages'][0]['payload']['headers']
+    def send_mails(self, replies: list, send_mails: bool, mark_mails: bool) -> bool:
+        try:
+            for reply in replies:
+                if reply["Reply"].lower() != "no reply required":
+                    thread = self.__service.users().threads().get(userId = 'me', id = reply["ID"]).execute()
+                    messages = thread['messages'][0]['payload']['headers']
 
-                # Retrieve the metadata of the thread
-                for msg in messages:
-                    if msg['name'] == 'Message-ID':
-                        message_id = msg['value']
+                    # Retrieve the metadata of the thread
+                    for msg in messages:
+                        if msg['name'] == 'Message-ID':
+                            message_id = msg['value']
 
-                # Constructing the reply message
-                message = MIMEMultipart()
-                msg = MIMEText(reply["Reply"])
-                message.attach(msg)
-                message['To'] = reply["Sender"]
-                message['Subject'] = reply["Subject"]
-                message['References '] = message_id
-                message['In-Reply-To '] = message_id
+                    # Constructing the reply message
+                    message = MIMEMultipart()
+                    msg = MIMEText(reply["Reply"])
+                    message.attach(msg)
+                    message['To'] = reply["Sender"]
+                    message['Subject'] = reply["Subject"]
+                    message['References '] = message_id
+                    message['In-Reply-To '] = message_id
 
-                encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+                    encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
-                create_message = {'raw': encoded_message, 'threadId': reply["ID"]}
-                # Sending the reply message to the thread
-                send_message = (self.__service.users().messages().send(userId="me", body=create_message).execute())
-            self.__service.users().threads().modify(userId = 'me', id = reply["ID"],body = { 'removeLabelIds': ['UNREAD']}).execute()
+                    create_message = {'raw': encoded_message, 'threadId': reply["ID"]}
+                    # Sending the reply message to the thread
+                    if send_mails:
+                        send_message = self.__service.users().messages().send(userId = "me", body = create_message).execute()
+                    else:
+                        make_draft = self.__service.users().drafts().create(userId = "me", body = create_message).execute()
+                if mark_mails:
+                    self.__service.users().threads().modify(userId = 'me', id = reply["ID"],body = { 'removeLabelIds': ['UNREAD']}).execute()
+            return True
+        except Exception as error:
+            print(error)
+            return False

@@ -1,62 +1,98 @@
+from fastapi import FastAPI
+import uvicorn
 from dotenv import load_dotenv
 load_dotenv()
 
 from email_operations import mail_operations
 from chains import chain_functions
 from database import database
+from structures import structures
+
+app = FastAPI()
 
 emails = mail_operations()
 db = database()
 
-if db.connect_to_database():
+@app.get("/")
+def home():
+    return {"Home Page" : "Welcome to Inbox-AI"}
 
-    print("Options\n1. Login\n2. Signup\n3. Delete Account")
-    choice = int(input("Enter your choice: "))
-    username = input("Enter Username: ")
+@app.post("/login")
+def login(username: str) -> dict:
+    details = db.get(username)
+    if details is None:
+        return {"Error" : "Incorrect Username"}
+    user = details["fullname"]
+    email = details["email_id"]
+    information = details["user_information"]
+    email_classes = details["email_classes"]
+    settings = details["settings"]
+    send_mails = settings["send_mails_directly"]
+    mark_mails = settings["mark_mails_read"]
+    status = mail_func(user, information, email, email_classes, send_mails, mark_mails)
+    return {"Data" : f"Welcome {user}", "Status" : status}
 
-    if choice == 1:
-        details = db.get(username)
-        user = details["fullname"]
-        information = details["user_information"]
-        email_classes = details["email_classes"]
-        print("Welcome", user)
-
-    elif choice == 2:
-        user = input("Full Name: ")
-        email = input("Email: ")
-        information = input("Information: ")
-        email_classes = input("Email Classes: ")
-        value = db.insert(username, user, email, information, email_classes)
-        if value:
-            print("Signup Successful!\nWelcome", user)
-        else:
-            print("Signup Unsuccessful! Try Later...")
-            exit()
-
-    elif choice == 3:
-        value = db.delete(username)
-        if value:
-            print("Account Deleted... Hate to see you go")
-        else:
-            print("Account could not be deleted, try later...")
-        exit()
-    
+@app.post("/signup")
+def signup(details: structures.signup_input) -> dict:
+    user = details.fullname
+    email = details.email
+    information = details.user_information
+    email_classes = details.email_classes
+    send_mails = details.send_mails
+    mark_mails = details.mark_mails
+    value = db.insert(details.username, user, email, information, email_classes, send_mails, mark_mails)
+    if value:
+        status = mail_func(user, information, email, email_classes, send_mails, mark_mails)
+        return {"Data" : f"Signup Successful! Welcome {user}", "Status" : status}
     else:
-        print("Invalid choice")
-        exit()
+        return {"Data" : "Signup Unsuccessful! Try Later..."}
 
-    mails = emails.read_mails()
+@app.post("/delete")
+def delete(username: str) -> dict:
+    value = db.delete(username)
+    if value:
+        return {"Data" : "Account Deleted... Hate to see you go"}
+    else:
+        return {"Data" : "Account could not be deleted, try later..."}
+
+@app.post("/update")
+def update(username: str, data: dict):
+    value = db.update(username, data)
+    if value:
+        return {"Data" : "Update Successful"}
+    else:
+        return {"Data" : "Update Unsuccessful"}
+
+def mail_func(user: str, information: str, email: str, email_classes: str, send_mails: bool, mark_mails: bool) -> dict:
+
+    status = {}
+
+    mails = emails.read_mails(email)
 
     if len(mails) == 0:
-        print("No Unread Mails")
-        exit()
+        return {"Data" : "No Unread Mails"}
+    
+    status["Emails Read"] = "Successful"
 
     chain_function = chain_functions(user, information, email_classes, mails)
 
     print()
     all_replies = chain_function.final_output()
+    if len(all_replies) == 0:
+        status["Replies Generated"] = "No Replies Generated"
+        return status
     print()
     for i in all_replies:
         print(i["Reply"], end = "\n")
 
-    emails.send_mails(all_replies)
+    status["Replies Generated"] = f"{len(all_replies)} Replies Generated"
+
+    if emails.send_mails(all_replies, send_mails, mark_mails):
+        status["Mails Sent"] = "Successful"
+        return status
+    
+    status["Mails Sent"] = "Unsuccessful"
+    return status
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
