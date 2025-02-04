@@ -67,7 +67,7 @@ def mail_func(user: str, information: str, email: str, email_classes: str, send_
 
     status = {}
 
-    mails = emails.read_mails(email)
+    mails = emails.read_mails(email, True)
 
     if len(mails) == 0:
         return {"Data" : "No Unread Mails"}

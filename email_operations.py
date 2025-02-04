@@ -3,6 +3,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from googleapiclient.discovery import build
 from bs4 import BeautifulSoup
+import pandas as pd
+import joblib
 
 from authorisation import authorisation
 
@@ -10,6 +12,12 @@ class mail_operations():
 
     __creds = None
     __service = None
+
+    __vectorizer = joblib.load("Models/vectorizer")
+    __gaussianNB = joblib.load("Models/GaussianNB")
+    __logisticRegression = joblib.load("Models/LogisticRegression")
+    __multinomialNB = joblib.load("Models/MultinomialNB")
+    __randomForest = joblib.load("Models/RandomForest")
 
     def __get_sender(self, i: int, messages, email: str) -> str:
         last_message = messages[i]['payload']
@@ -33,12 +41,15 @@ class mail_operations():
         return new_text
 
     def __init__(self):
-        auth = authorisation()
-        self.__creds = auth.cred_token_auth()
+        __auth = authorisation()
+        self.__creds = __auth.cred_token_auth()
         self.__service = build("gmail", "v1", credentials = self.__creds)
     
-    def read_mails(self, email: str) -> list | None:
-        threads = self.__service.users().threads().list(userId='me', labelIds = ["INBOX", "UNREAD"]).execute().get('threads', [])
+    def read_mails(self, email: str, unread_mails: bool) -> list | None:
+        if unread_mails:
+            threads = self.__service.users().threads().list(userId='me', labelIds = ["INBOX", "UNREAD"]).execute().get('threads', [])
+        else:
+            threads = self.__service.users().threads().list(userId='me').execute().get('threads', [])
         emails = []
         for thread in threads:
             thread_details = self.__service.users().threads().get(userId='me', id=thread['id']).execute()
@@ -121,3 +132,27 @@ class mail_operations():
         except Exception as error:
             print(error)
             return False
+        
+    def add_labels(self, id, labels: list[str]) -> bool:
+        self.__service.users().threads().modify(userId = 'me', id = id,body = { 'addLabelIds': labels}).execute()
+    
+    def remove_labels(self, id, labels: list[str]) -> bool:
+        self.__service.users().threads().modify(userId = 'me', id = id,body = { 'removeLabelIds': labels}).execute()
+        
+    def classify_important_mails(self, email: list[str]) -> list[int]:
+        df = pd.DataFrame({"text" : email})
+        df = self.__vectorizer.transform(df["text"]).toarray()
+        gnb_prediction = self.__gaussianNB.predict(df)
+        lrc_prediction = self.__logisticRegression.predict(df)
+        mnb_prediction = self.__multinomialNB.predict(df)
+        rfc_prediction = self.__randomForest.predict(df)
+
+        predictions = []
+
+        for i in range(len(gnb_prediction)):
+            if gnb_prediction[i] + lrc_prediction[i] + mnb_prediction[i] + rfc_prediction[i] > 1:
+                predictions.append(0)
+            else:
+                predictions.append(1)
+        
+        return predictions
