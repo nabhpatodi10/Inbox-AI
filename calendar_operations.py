@@ -102,6 +102,13 @@ class calendar_operations():
         except Exception as error:
             raise error
         
+    def delete_events(self, event_id, calendar_id: str = "primary") -> bool:
+        try:
+            self.__service.events().delete(calendarId = calendar_id, eventId = event_id).execute()
+            return True
+        except Exception as error:
+            raise error
+        
     def events_in_range(self, calendars: dict, start_time: datetime.datetime, weeks: int = 0, days: int = 0, hours: int = 0, mins: int = 0) -> dict:
         try:
             events = {}
